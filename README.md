@@ -37,6 +37,48 @@ Every run prints one `RESULT ...` line with the time, a global checksum and the 
 
 On a machine with fewer cores than processes use `MPIRUN_ARGS="--oversubscribe"`.
 
+## Execution instructions
+
+**Requirements.** Linux (tested on Ubuntu, also works in WSL), `gcc`, an MPI implementation with `mpicc` and `mpirun` (OpenMPI or MPICH), Python 3 with `matplotlib`.
+
+```bash
+sudo apt install build-essential openmpi-bin libopenmpi-dev python3 python3-matplotlib
+```
+
+**1. Build.** From the project root run `make`. This produces two executables: `gol_seq` (sequential baseline, built with `gcc`, no MPI/OpenMP) and `gol_hybrid` (built with `mpicc -fopenmp`).
+
+**2. Check correctness.** Run `make test`. It runs 156 checks (known patterns and sequential-vs-hybrid comparison for many process/thread combinations) and must end with `0 failed`.
+
+**3. Run a single simulation.** Both programs print one `RESULT` line with the run parameters, the time, a global checksum and the final population. For the same `-r -c -s` (and seed), the `checksum` and `population` of both programs must be identical.
+
+```bash
+./gol_seq -r 2000 -c 2000 -s 100
+mpirun -np 4 ./gol_hybrid -r 2000 -c 2000 -s 100 -t 2 -m overlap
+```
+
+| Option | Meaning | Default |
+|---|---|---|
+| `-r`, `-c` | grid rows / columns | 1024 |
+| `-s` | number of generations | 100 |
+| `-d`, `-S` | initial density / random seed | 0.3 / 12345 |
+| `-p` | pattern: `random`, `glider`, `blinker`, `block` | `random` |
+| `-o file` | write the final grid as text (small grids only) | off |
+| `-t` | OpenMP threads per MPI process (`gol_hybrid` only) | `OMP_NUM_THREADS` |
+| `-m` | halo exchange: `sync` or `overlap` (`gol_hybrid` only) | `sync` |
+
+`mpirun -np P` starts `P` MPI processes; total cores used = `P × t`. If `mpirun` reports not enough slots, add `--oversubscribe`. The number of rows must be at least `P`.
+
+**4. Watch the simulation (optional demo).** `python3 watch.py` animates a glider in the terminal; `python3 watch.py --np 3` computes it with 3 MPI processes; `-p random` starts from a random grid.
+
+**5. Reproduce the performance results.** Use the number of **physical** cores of your machine (`lscpu`):
+
+```bash
+python3 bench/run_bench.py --cores 8      # writes results/strong.csv and results/weak.csv
+python3 bench/plot.py                     # writes speedup, efficiency, modes and weak-scaling PNGs to results/
+```
+
+`run_bench.py` measures strong scaling (fixed 4096×4096 grid, 200 generations) and weak scaling (1024 rows per core) for pure OpenMP, pure MPI and hybrid splits, in both communication modes, repeating each run 3 times and keeping the minimum. Speedup is computed against `gol_seq`, and every measurement is checked against the sequential checksum. Use `--quick` for a short smoke test. For stable numbers, do not run other heavy programs during the benchmark.
+
 ## Design
 
 **Problem.** Each cell is alive/dead; every generation a live cell with 2 or 3 live
